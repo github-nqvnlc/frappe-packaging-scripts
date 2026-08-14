@@ -76,10 +76,10 @@ docker build \
 #### 8. Thiết lập Proxy & Cloudflare Tunnel (Phân nhánh chế độ)
 
 ##### 🟢 Chế độ A: Người dùng chạy qua Cloudflare Tunnel (`USE_CLOUDFLARE_TUNNEL="true"`)
-1. **Khởi chạy Traefik HTTP** (chỉ nạp HTTP `compose.traefik.yaml`, bỏ qua SSL Let's Encrypt vì Cloudflare Edge quản lý SSL):
+1. **Khởi chạy Traefik HTTP** (nạp HTTP `compose.proxy.yaml`, bỏ qua SSL Let's Encrypt vì Cloudflare Edge quản lý SSL):
    ```bash
    docker compose --project-name traefik \
-     -f overrides/compose.traefik.yaml up -d
+     -f overrides/compose.proxy.yaml up -d
    ```
 2. **Tạo & Khởi chạy Container `cloudflared`**:
    - Tạo file `~/gitops/cloudflared.yaml`:
@@ -115,8 +115,8 @@ docker build \
   ```bash
   docker compose --project-name traefik \
     --env-file ~/gitops/traefik.env \
-    -f overrides/compose.traefik.yaml \
-    -f overrides/compose.traefik-ssl.yaml up -d
+    -f overrides/compose.proxy.yaml \
+    -f overrides/compose.https.yaml up -d
   ```
 
 #### 9. Thiết lập MariaDB Shared

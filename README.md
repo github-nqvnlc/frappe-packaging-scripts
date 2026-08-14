@@ -152,8 +152,8 @@ Script `setup.sh` tự động phân nhánh và thực thi 12 bước cài đặ
 7. **[Bước 7] Tạo `apps.json`**: Xuất mảng `$APPS_JSON` thành file secret để build image.
 8. **[Bước 8] Build Custom Image**: Gọi `docker build` đóng gói Frappe cùng các custom app có trong secret.
 9. **[Bước 9] Khởi chạy Proxy / Tunnel**:
-   - **Luồng 1**: Chạy Traefik HTTP + HTTPS Let's Encrypt SSL.
-   - **Luồng 2**: Chạy Traefik HTTP nội bộ và khởi chạy container `cloudflared` với `$CLOUDFLARE_TUNNEL_TOKEN`.
+   - **Luồng 1**: Khởi chạy Traefik HTTP + HTTPS Let's Encrypt SSL (`overrides/compose.proxy.yaml` & `overrides/compose.https.yaml`).
+   - **Luồng 2**: Khởi chạy Traefik HTTP nội bộ (`overrides/compose.proxy.yaml`) và container `cloudflared` với `$CLOUDFLARE_TUNNEL_TOKEN`.
 10. **[Bước 10] Khởi chạy MariaDB Shared**: Khởi động database MariaDB dùng chung.
 11. **[Bước 11] Deploy Project Stack**: Sinh file Compose tổng hợp `${PROJECT_NAME}.yaml` tương ứng với từng luồng và khởi chạy container stack.
 12. **[Bước 12] Tạo Site & Install Custom Apps**: Thực thi `bench new-site` trực tiếp với domain và cài đặt toàn bộ custom app.

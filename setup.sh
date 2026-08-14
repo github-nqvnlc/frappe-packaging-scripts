@@ -217,7 +217,7 @@ echo "[BƯỚC 9/12] Cấu hình Proxy và Tunnel (Mode Cloudflare Tunnel: $USE_
 if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
     echo "  -> Đang khởi chạy Traefik ở chế độ HTTP nội bộ (Cloudflare quản lý SSL Edge)..."
     docker compose --project-name traefik \
-      -f overrides/compose.traefik.yaml up -d
+      -f overrides/compose.proxy.yaml up -d
 
     echo "  -> Đang khởi tạo Cloudflare Tunnel container (cloudflared)..."
     cat <<EOF > "$GITOPS_DIR/cloudflared.yaml"
@@ -247,8 +247,8 @@ LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
 EOF
     docker compose --project-name traefik \
       --env-file "$GITOPS_DIR/traefik.env" \
-      -f overrides/compose.traefik.yaml \
-      -f overrides/compose.traefik-ssl.yaml up -d
+      -f overrides/compose.proxy.yaml \
+      -f overrides/compose.https.yaml up -d
     echo "[✓] Traefik Reverse Proxy & SSL đã khởi chạy thành công."
 fi
 

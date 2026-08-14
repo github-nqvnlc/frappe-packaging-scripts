@@ -144,7 +144,7 @@ Khi triển khai với Cloudflare Tunnel, ta **không dùng** `compose.traefik-s
 #### 1. Khởi chạy Traefik (HTTP Only):
 ```bash
 docker compose --project-name traefik \
-  -f overrides/compose.traefik.yaml up -d
+  -f overrides/compose.proxy.yaml up -d
 ```
 
 #### 2. Khởi chạy Cloudflare Tunnel Container:
