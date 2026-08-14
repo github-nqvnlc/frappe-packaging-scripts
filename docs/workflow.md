@@ -1,22 +1,24 @@
-# Workflow Cài Đặt SMRS Pack (Tự Động Với Biến Môi Trường .env)
+# Workflow Cài Đặt Frappe Packaging (Hỗ Trợ Direct Domain & Cloudflare Tunnel)
 
-Tài liệu này định nghĩa thứ tự các bước thực thi cho script tự động hóa trong `/home/baucan/scripts`, tự động đọc các tham số cấu hình từ file `.env` (mẫu tại `example.env`).
+Tài liệu này định nghĩa quy trình thực thi tự động hóa cho script cài đặt, tự động đọc cấu hình từ file `.env` (mẫu tại `example.env`). Quy trình hỗ trợ cả 2 chế độ: **Triển khai Domain trực tiếp (Traefik SSL)** và **Triển khai qua Cloudflare Tunnel (Không mở port 80/443 public)**.
 
 ---
 
-### Các biến môi trường sẽ sử dụng (từ file `.env`)
+### Bảng Biến Môi Trường Cấu Hình (Từ file `.env`)
 
-| Tên biến | Mô tả | Ví dụ trong `example.env` |
-| :--- | :--- | :--- |
-| `APPS_JSON` | Danh sách custom app dạng JSON truyền vào Docker build secret | `'[{"url":"...","branch":"main"}]'` |
-| `CUSTOM_APP_NAMES` | Danh sách tên app (cách nhau bởi khoảng trắng) cài vào site | `"custom_app_1 custom_app_2"` |
-| `FRAPPE_BRANCH` | Branch phiên bản Frappe | `"version-15"` |
-| `CUSTOM_IMAGE_TAG` | Tag tên Docker Image sẽ build | `"smrs-custom-image:latest"` |
-| `LETSENCRYPT_EMAIL` | Email đăng ký gia hạn SSL Let's Encrypt | `"admin@yourdomain.com"` |
-| `SITE_DOMAIN` | Tên miền chính cho site | `"yourdomain.com"` |
-| `PROJECT_NAME` | Tên project Docker Compose | `"smrs-project"` |
-| `DB_ROOT_PASSWORD` | Mật khẩu root MariaDB | `"ChangeMe_Secure_DB_Password_123!"` |
-| `FRAPPE_ADMIN_PASSWORD` | Mật khẩu Administrator Frappe | `"ChangeMe_Secure_Admin_Password_123!"` |
+| Tên biến | Bắt buộc | Mô tả | Ví dụ trong `example.env` |
+| :--- | :---: | :--- | :--- |
+| `APPS_JSON` | **Có** | Mảng JSON khai báo danh sách custom app cần clone & build | `'[{"url":"...","branch":"main"}]'` |
+| `CUSTOM_APP_NAMES` | **Có** | Danh sách tên app (cách nhau bởi khoảng trắng) cài vào site | `"custom_app_1 custom_app_2"` |
+| `FRAPPE_BRANCH` | **Có** | Phiên bản branch của Frappe/ERPNext | `"version-15"` |
+| `CUSTOM_IMAGE_TAG` | **Có** | Tag tên Docker Image sẽ build | `"frappe-custom-image:latest"` |
+| `SITE_DOMAIN` | **Có** | Tên miền chính cho site | `"yourdomain.com"` |
+| `PROJECT_NAME` | **Có** | Tên project Docker Compose cô lập | `"frappe-packaging"` |
+| `DB_ROOT_PASSWORD` | **Có** | Mật khẩu root MariaDB | `"admin@123"` |
+| `FRAPPE_ADMIN_PASSWORD` | **Có** | Mật khẩu Administrator Frappe | `"admin"` |
+| `LETSENCRYPT_EMAIL` | Tùy chọn | Email gia hạn SSL Let's Encrypt (Khi không dùng Tunnel) | `"admin@yourdomain.com"` |
+| `USE_CLOUDFLARE_TUNNEL` | **Có** | Đặt `"true"` để dùng Cloudflare Tunnel, `"false"` để chạy trực tiếp | `"false"` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Khi Tunnel | Token từ Cloudflare Zero Trust (Yêu cầu nếu `USE_CLOUDFLARE_TUNNEL="true"`) | `"eyJhSW9p..."` |
 
 ---
 
@@ -39,38 +41,24 @@ Kiểm tra và cài đặt nếu chưa có:
 - **Docker Compose v2** (`docker compose` plugin)
 
 #### 4. Tạo thư mục làm việc
-Tạo thư mục `~/frappe-packaging` và di chuyển vào thư mục này:
+Tạo thư mục `~/frappe-packaging` và `~/gitops`:
 ```bash
-mkdir -p ~/frappe-packaging && cd ~/frappe-packaging
+mkdir -p ~/frappe-packaging ~/gitops
 ```
 
 #### 5. Clone Repository `frappe_docker`
 Clone repository chính thức của `frappe_docker` nếu chưa tồn tại:
 ```bash
-git clone https://github.com/frappe/frappe_docker
+git clone https://github.com/frappe/frappe_docker ~/frappe-packaging/frappe_docker
 cd ~/frappe-packaging/frappe_docker
 ```
 
-#### 6. Đọc file `.env` và tạo file `apps.json`
-Kiểm tra sự tồn tại của file `.env`. Nếu không tìm thấy, thông báo lỗi và dừng script. Nếu có, đọc các biến môi trường và tạo file `apps.json` từ biến `$APPS_JSON`:
+#### 6. Đọc & Kiểm tra file `.env`
+- Kiểm tra file `.env` tồn tại. Báo lỗi và dừng nếu thiếu `.env`.
+- Load biến môi trường và kiểm tra nếu `USE_CLOUDFLARE_TUNNEL="true"` thì biến `CLOUDFLARE_TUNNEL_TOKEN` không được để trống.
+- Đọc biến `$APPS_JSON` và xuất ra file `apps.json`:
 ```bash
-# Đường dẫn tới file .env (ví dụ trong thư mục script hoặc thư mục làm việc)
-ENV_FILE="/path/to/.env"
-
-# 1. Kiểm tra file .env có tồn tại hay không
-if [ ! -f "$ENV_FILE" ]; then
-    echo "[!] Lỗi: Không tìm thấy file cấu hình $ENV_FILE"
-    echo "[*] Vui lòng sao chép từ example.env và điền đầy đủ cấu hình trước khi chạy script."
-    exit 1
-fi
-
-# 2. Load biến môi trường từ .env
-set -o allexport
-source "$ENV_FILE"
-set +o allexport
-
-# 3. Tạo file apps.json chứa cấu hình custom apps
-echo "$APPS_JSON" > apps.json
+echo "$APPS_JSON" > ~/frappe-packaging/frappe_docker/apps.json
 ```
 
 #### 7. Build Custom Docker Image
@@ -85,24 +73,66 @@ docker build \
   --file=images/layered/Containerfile .
 ```
 
-#### 8. Thiết lập Traefik (Load Balancer & SSL)
-- Tạo thư mục lưu cấu hình GitOps (ví dụ: `~/gitops`).
+#### 8. Thiết lập Proxy & Cloudflare Tunnel (Phân nhánh chế độ)
+
+##### 🟢 Chế độ A: Người dùng chạy qua Cloudflare Tunnel (`USE_CLOUDFLARE_TUNNEL="true"`)
+1. **Khởi chạy Traefik HTTP** (chỉ nạp HTTP `compose.traefik.yaml`, bỏ qua SSL Let's Encrypt vì Cloudflare Edge quản lý SSL):
+   ```bash
+   docker compose --project-name traefik \
+     -f overrides/compose.traefik.yaml up -d
+   ```
+2. **Tạo & Khởi chạy Container `cloudflared`**:
+   - Tạo file `~/gitops/cloudflared.yaml`:
+     ```yaml
+     version: "3.8"
+     services:
+       cloudflared:
+         image: cloudflare/cloudflared:latest
+         container_name: cloudflared
+         restart: unless-stopped
+         command: tunnel --no-autoupdate run
+         environment:
+           - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+         networks:
+           - traefik-public
+
+     networks:
+       traefik-public:
+         external: true
+     ```
+   - Khởi chạy container:
+     ```bash
+     docker compose --project-name tunnel -f ~/gitops/cloudflared.yaml up -d
+     ```
+
+##### 🔵 Chế độ B: Trực tiếp qua Public IP/Domain (`USE_CLOUDFLARE_TUNNEL="false"`)
 - Tạo file `~/gitops/traefik.env`:
   ```env
   UPSTREAM_LOG_LEVEL=info
   LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
   ```
-- Khởi chạy Traefik với docker compose (`overrides/compose.traefik.yaml` và `compose.traefik-ssl.yaml`).
+- Khởi chạy Traefik với HTTP + HTTPS Let's Encrypt SSL:
+  ```bash
+  docker compose --project-name traefik \
+    --env-file ~/gitops/traefik.env \
+    -f overrides/compose.traefik.yaml \
+    -f overrides/compose.traefik-ssl.yaml up -d
+  ```
 
 #### 9. Thiết lập MariaDB Shared
 - Tạo file `~/gitops/mariadb.env`:
   ```env
   DB_PASSWORD=$DB_ROOT_PASSWORD
   ```
-- Khởi chạy MariaDB shared với `overrides/compose.mariadb-shared.yaml`.
+- Khởi chạy MariaDB shared:
+  ```bash
+  docker compose --project-name mariadb \
+    --env-file ~/gitops/mariadb.env \
+    -f overrides/compose.mariadb-shared.yaml up -d
+  ```
 
 #### 10. Cấu hình Project Stack (Bench)
-- Tạo file `~/gitops/${PROJECT_NAME}.env` chứa các biến:
+- Tạo file `~/gitops/${PROJECT_NAME}.env`:
   ```env
   BACKEND_IMAGE=$CUSTOM_IMAGE_TAG
   FRONTEND_IMAGE=$CUSTOM_IMAGE_TAG
@@ -111,22 +141,37 @@ docker build \
   ```
 
 #### 11. Deploy Project Stack
-- Sinh file cấu hình tổng hợp `${PROJECT_NAME}.yaml` bằng `docker compose config` kèm các overrides (`redis`, `multi-bench`, `multi-bench-ssl`).
+- Sinh file cấu hình tổng hợp `${PROJECT_NAME}.yaml`:
+  - **Nếu `USE_CLOUDFLARE_TUNNEL="true"`**:
+    ```bash
+    docker compose --project-name "$PROJECT_NAME" \
+      --env-file ~/gitops/${PROJECT_NAME}.env \
+      -f compose.yaml \
+      -f overrides/compose.redis.yaml \
+      -f overrides/compose.multi-bench.yaml config > ~/gitops/${PROJECT_NAME}.yaml
+    ```
+  - **Nếu `USE_CLOUDFLARE_TUNNEL="false"`**:
+    ```bash
+    docker compose --project-name "$PROJECT_NAME" \
+      --env-file ~/gitops/${PROJECT_NAME}.env \
+      -f compose.yaml \
+      -f overrides/compose.redis.yaml \
+      -f overrides/compose.multi-bench.yaml \
+      -f overrides/compose.multi-bench-ssl.yaml config > ~/gitops/${PROJECT_NAME}.yaml
+    ```
 - Khởi chạy stack:
   ```bash
   docker compose -p "$PROJECT_NAME" -f ~/gitops/${PROJECT_NAME}.yaml up -d
   ```
 
 #### 12. Tạo Site và Cài đặt các Custom Apps
-Dựng động các cờ `--install-app` cho từng custom app có trong `$CUSTOM_APP_NAMES` và thực thi `bench new-site`:
+Dựng động các cờ `--install-app` cho từng custom app trong `$CUSTOM_APP_NAMES` và thực thi `bench new-site`:
 ```bash
-# Dựng danh sách cờ --install-app
 INSTALL_APP_FLAGS=""
 for app in $CUSTOM_APP_NAMES; do
   INSTALL_APP_FLAGS="$INSTALL_APP_FLAGS --install-app $app"
 done
 
-# Tạo site mới và cài đặt tất cả custom app
 docker compose --project-name "$PROJECT_NAME" exec backend \
   bench new-site "$SITE_DOMAIN" \
   --mariadb-user-host-login-scope=% \

@@ -7,11 +7,11 @@ export NEEDRESTART_MODE=a
 APT_CMD="apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 
 # ==============================================================================
-# SMRS Pack & Deployment Automation Script
+# Frappe Packaging & Deployment Automation Script
 # ==============================================================================
 
 echo "================================================================================"
-echo "           BẮT ĐẦU WORKFLOW TỰ ĐỘNG CÀI ĐẶT VÀ DEPLOY SMRS PACK                 "
+echo "           BẮT ĐẦU WORKFLOW TỰ ĐỘNG CÀI ĐẶT VÀ DEPLOY FRAPPE PACKAGING          "
 echo "================================================================================"
 
 # ------------------------------------------------------------------------------
@@ -34,7 +34,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo "  -> Target User     : $REAL_USER"
 echo "  -> Home Directory  : $REAL_HOME"
-echo "  -> SMRS Directory  : $SMRS_DIR"
+echo "  -> Work Directory  : $SMRS_DIR"
 echo "  -> GitOps Directory: $GITOPS_DIR"
 echo "[✓] Kiểm tra quyền root & môi trường hoàn tất."
 
@@ -79,8 +79,16 @@ for var in "${REQUIRED_VARS[@]}"; do
     fi
 done
 
+USE_CLOUDFLARE_TUNNEL="${USE_CLOUDFLARE_TUNNEL:-false}"
+if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+    if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+        echo "[!] LỖI: Chế độ Cloudflare Tunnel đang bật nhưng 'CLOUDFLARE_TUNNEL_TOKEN' chưa được khai báo trong .env!"
+        exit 1
+    fi
+fi
+
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-15}"
-CUSTOM_IMAGE_TAG="${CUSTOM_IMAGE_TAG:-smrs-custom-image:latest}"
+CUSTOM_IMAGE_TAG="${CUSTOM_IMAGE_TAG:-frappe-custom-image:latest}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-admin@$SITE_DOMAIN}"
 
 echo "  -> Project Name   : $PROJECT_NAME"
@@ -88,6 +96,7 @@ echo "  -> Site Domain    : $SITE_DOMAIN"
 echo "  -> Custom Apps    : $CUSTOM_APP_NAMES"
 echo "  -> Frappe Branch  : $FRAPPE_BRANCH"
 echo "  -> Image Tag      : $CUSTOM_IMAGE_TAG"
+echo "  -> Mode Tunnel    : $USE_CLOUDFLARE_TUNNEL"
 echo "[✓] Đọc và kiểm tra cấu hình .env hoàn tất."
 
 # ------------------------------------------------------------------------------
@@ -200,21 +209,48 @@ docker build \
 echo "[✓] Build Custom Docker Image $CUSTOM_IMAGE_TAG thành công!"
 
 # ------------------------------------------------------------------------------
-# Bước 9: Thiết lập Traefik (Load Balancer & SSL)
+# Bước 9: Thiết lập Traefik (Proxy) & Cloudflare Tunnel
 # ------------------------------------------------------------------------------
 echo ""
-echo "[BƯỚC 9/12] Cấu hình và khởi chạy Traefik Reverse Proxy & Let's Encrypt..."
-cat <<EOF > "$GITOPS_DIR/traefik.env"
+echo "[BƯỚC 9/12] Cấu hình Proxy và Tunnel (Mode Cloudflare Tunnel: $USE_CLOUDFLARE_TUNNEL)..."
+
+if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+    echo "  -> Đang khởi chạy Traefik ở chế độ HTTP nội bộ (Cloudflare quản lý SSL Edge)..."
+    docker compose --project-name traefik \
+      -f overrides/compose.traefik.yaml up -d
+
+    echo "  -> Đang khởi tạo Cloudflare Tunnel container (cloudflared)..."
+    cat <<EOF > "$GITOPS_DIR/cloudflared.yaml"
+version: "3.8"
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true
+EOF
+    docker compose --project-name tunnel -f "$GITOPS_DIR/cloudflared.yaml" up -d
+    echo "[✓] Traefik HTTP và Cloudflare Tunnel đã được khởi chạy."
+else
+    echo "  -> Đang khởi chạy Traefik với Let's Encrypt SSL (Public Port 80/443)..."
+    cat <<EOF > "$GITOPS_DIR/traefik.env"
 UPSTREAM_LOG_LEVEL=info
 LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
 EOF
-
-echo "  -> Đang khởi chạy Traefik container..."
-docker compose --project-name traefik \
-  --env-file "$GITOPS_DIR/traefik.env" \
-  -f overrides/compose.traefik.yaml \
-  -f overrides/compose.traefik-ssl.yaml up -d
-echo "[✓] Traefik đã được khởi chạy thành công."
+    docker compose --project-name traefik \
+      --env-file "$GITOPS_DIR/traefik.env" \
+      -f overrides/compose.traefik.yaml \
+      -f overrides/compose.traefik-ssl.yaml up -d
+    echo "[✓] Traefik Reverse Proxy & SSL đã khởi chạy thành công."
+fi
 
 # ------------------------------------------------------------------------------
 # Bước 10: Thiết lập MariaDB Shared
@@ -245,12 +281,23 @@ SITES_RULE=Host(\`$SITE_DOMAIN\`)
 EOF
 
 echo "  -> Đang sinh file cấu hình tổng hợp $GITOPS_DIR/${PROJECT_NAME}.yaml..."
-docker compose --project-name "$PROJECT_NAME" \
-  --env-file "$GITOPS_DIR/${PROJECT_NAME}.env" \
-  -f compose.yaml \
-  -f overrides/compose.redis.yaml \
-  -f overrides/compose.multi-bench.yaml \
-  -f overrides/compose.multi-bench-ssl.yaml config > "$GITOPS_DIR/${PROJECT_NAME}.yaml"
+
+if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+    # Không sử dụng SSL override nội bộ khi dùng Cloudflare Tunnel
+    docker compose --project-name "$PROJECT_NAME" \
+      --env-file "$GITOPS_DIR/${PROJECT_NAME}.env" \
+      -f compose.yaml \
+      -f overrides/compose.redis.yaml \
+      -f overrides/compose.multi-bench.yaml config > "$GITOPS_DIR/${PROJECT_NAME}.yaml"
+else
+    # Sử dụng SSL override cho Traefik Let's Encrypt
+    docker compose --project-name "$PROJECT_NAME" \
+      --env-file "$GITOPS_DIR/${PROJECT_NAME}.env" \
+      -f compose.yaml \
+      -f overrides/compose.redis.yaml \
+      -f overrides/compose.multi-bench.yaml \
+      -f overrides/compose.multi-bench-ssl.yaml config > "$GITOPS_DIR/${PROJECT_NAME}.yaml"
+fi
 
 echo "  -> Đang khởi chạy Stack $PROJECT_NAME..."
 docker compose -p "$PROJECT_NAME" -f "$GITOPS_DIR/${PROJECT_NAME}.yaml" up -d
@@ -288,7 +335,7 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "                  BÁO CÁO KẾT QUẢ TRIỂN KHAI SMRS PACK                          "
+echo "               BÁO CÁO KẾT QUẢ TRIỂN KHAI FRAPPE PACKAGING                      "
 echo "================================================================================"
 echo " [✓] BƯỚC 1 : Xác thực quyền Root & Môi trường ($REAL_USER)"
 echo " [✓] BƯỚC 2 : Load file cấu hình .env ($ENV_FILE)"
@@ -298,13 +345,18 @@ echo " [✓] BƯỚC 5 : Khởi tạo thư mục $SMRS_DIR và $GITOPS_DIR"
 echo " [✓] BƯỚC 6 : Đã chuẩn bị repository frappe_docker"
 echo " [✓] BƯỚC 7 : Đã xuất file apps.json với các custom app"
 echo " [✓] BƯỚC 8 : Build thành công Docker Image: $CUSTOM_IMAGE_TAG"
-echo " [✓] BƯỚC 9 : Traefik Reverse Proxy SSL đã hoạt động (Email: $LETSENCRYPT_EMAIL)"
+if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
+    echo " [✓] BƯỚC 9 : Traefik HTTP Proxy & Cloudflare Tunnel Container đã hoạt động"
+else
+    echo " [✓] BƯỚC 9 : Traefik Reverse Proxy SSL đã hoạt động (Email: $LETSENCRYPT_EMAIL)"
+fi
 echo " [✓] BƯỚC 10: MariaDB Shared Database đã khởi chạy"
 echo " [✓] BƯỚC 11: Project Stack '$PROJECT_NAME' đã được deploy"
 echo " [✓] BƯỚC 12: Đã tạo Site '$SITE_DOMAIN' & Cài đặt xong app ($CUSTOM_APP_NAMES)"
 echo "================================================================================"
 echo " THÔNG TIN TRUY CẬP HỆ THỐNG:"
 echo "  - Trang web chính  : https://$SITE_DOMAIN"
+echo "  - Chế độ triển khai: $([ "$USE_CLOUDFLARE_TUNNEL" = "true" ] && echo "Cloudflare Tunnel" || echo "Direct Domain Traefik SSL")"
 echo "  - Tài khoản Admin  : Administrator"
 echo "  - Mật khẩu Admin   : $FRAPPE_ADMIN_PASSWORD"
 echo "================================================================================"

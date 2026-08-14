@@ -69,6 +69,8 @@ File `.env` quản lý toàn bộ tham số hoạt động của script tự đ�
 | `LETSENCRYPT_EMAIL` | Email đăng ký gia hạn SSL với Let's Encrypt | `"admin@yourdomain.com"` |
 | `DB_ROOT_PASSWORD` | Mật khẩu root cơ sở dữ liệu MariaDB | `"Password_Bao_Mat_DB_123!"` |
 | `FRAPPE_ADMIN_PASSWORD` | Mật khẩu tài khoản `Administrator` của Frappe | `"Password_Bao_Mat_Admin_123!"` |
+| `USE_CLOUDFLARE_TUNNEL` | Đặt `"true"` nếu chạy qua Cloudflare Tunnel, `"false"` nếu chạy trực tiếp Traefik SSL | `"false"` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Token từ Cloudflare Zero Trust Dashboard (bắt buộc khi `USE_CLOUDFLARE_TUNNEL="true"`) | `"eyJhSW9p..."` |
 
 ---
 
