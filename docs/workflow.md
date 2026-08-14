@@ -39,16 +39,16 @@ Kiểm tra và cài đặt nếu chưa có:
 - **Docker Compose v2** (`docker compose` plugin)
 
 #### 4. Tạo thư mục làm việc
-Tạo thư mục `~/smrs-pack` và di chuyển vào thư mục này:
+Tạo thư mục `~/frappe-packaging` và di chuyển vào thư mục này:
 ```bash
-mkdir -p ~/smrs-pack && cd ~/smrs-pack
+mkdir -p ~/frappe-packaging && cd ~/frappe-packaging
 ```
 
 #### 5. Clone Repository `frappe_docker`
 Clone repository chính thức của `frappe_docker` nếu chưa tồn tại:
 ```bash
 git clone https://github.com/frappe/frappe_docker
-cd ~/smrs-pack/frappe_docker
+cd ~/frappe-packaging/frappe_docker
 ```
 
 #### 6. Đọc file `.env` và tạo file `apps.json`

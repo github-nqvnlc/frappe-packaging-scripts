@@ -28,7 +28,7 @@ fi
 
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo "~$REAL_USER")
-SMRS_DIR="$REAL_HOME/smrs-pack"
+SMRS_DIR="$REAL_HOME/frappe-packaging"
 GITOPS_DIR="$REAL_HOME/gitops"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
