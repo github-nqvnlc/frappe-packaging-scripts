@@ -116,7 +116,18 @@ SITE_DOMAIN="yourdomain.com"
 ### Bước 4: Cấp Quyền Thực Thi & Chạy Script Setup
 ```bash
 chmod +x setup.sh
+
+# Chạy menu tương tác (Menu hiển thị trực quan các bước và kiểm tra tiền đề)
 ./setup.sh
+
+# Hoặc chạy trực tiếp toàn bộ 12 bước không qua menu
+./setup.sh --all
+
+# Hoặc kiểm tra trạng thái tất cả các bước (Health Check)
+./setup.sh --check
+
+# Hoặc chạy riêng một bước cụ thể (ví dụ Bước 8)
+./setup.sh --step 8
 ```
 
 ---
