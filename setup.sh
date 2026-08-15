@@ -311,7 +311,32 @@ run_step_9() {
     cd "$SMRS_DIR/frappe_docker"
     if [ "$USE_CLOUDFLARE_TUNNEL" = "true" ]; then
         echo "  -> Khởi chạy Traefik ở chế độ HTTP nội bộ..."
-        docker compose --project-name traefik -f overrides/compose.proxy.yaml up -d
+        cat <<EOF > "$GITOPS_DIR/traefik.yaml"
+version: "3.8"
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.http.address=:80
+      - --accesslog
+      - --log
+    ports:
+      - ${HTTP_PUBLISH_PORT:-80}:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    name: traefik-public
+    external: false
+EOF
+        docker compose --project-name traefik -f "$GITOPS_DIR/traefik.yaml" up -d
 
         echo "  -> Khởi tạo Cloudflare Tunnel container (cloudflared)..."
         cat <<EOF > "$GITOPS_DIR/cloudflared.yaml"
@@ -335,14 +360,44 @@ EOF
         echo "[✓] Traefik HTTP và Cloudflare Tunnel đã chạy."
     else
         echo "  -> Khởi chạy Traefik với SSL Let's Encrypt..."
-        cat <<EOF > "$GITOPS_DIR/traefik.env"
-UPSTREAM_LOG_LEVEL=info
-LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL
+        cat <<EOF > "$GITOPS_DIR/traefik.yaml"
+version: "3.8"
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.http.address=:80
+      - --entrypoints.http.http.redirections.entrypoint.to=https
+      - --entrypoints.http.http.redirections.entrypoint.scheme=https
+      - --entrypoints.https.address=:443
+      - --certificatesresolvers.le.acme.email=$LETSENCRYPT_EMAIL
+      - --certificatesresolvers.le.acme.storage=/certificates/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=http
+      - --accesslog
+      - --log
+    ports:
+      - ${HTTP_PUBLISH_PORT:-80}:80
+      - ${HTTPS_PUBLISH_PORT:-443}:443
+    volumes:
+      - cert-data:/certificates
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - traefik-public
+
+volumes:
+  cert-data:
+
+networks:
+  traefik-public:
+    name: traefik-public
+    external: false
 EOF
-        docker compose --project-name traefik \
-          --env-file "$GITOPS_DIR/traefik.env" \
-          -f overrides/compose.proxy.yaml \
-          -f overrides/compose.https.yaml up -d
+        docker compose --project-name traefik -f "$GITOPS_DIR/traefik.yaml" up -d
         echo "[✓] Traefik Reverse Proxy & SSL đã chạy."
     fi
     echo "[✓] Bước 9 hoàn tất."
@@ -549,7 +604,9 @@ teardown_all_containers() {
 
         # Dừng & Xóa Traefik Proxy
         echo "  -> Đang dừng & xóa Traefik Proxy..."
-        if [ -f "$GITOPS_DIR/traefik.env" ]; then
+        if [ -f "$GITOPS_DIR/traefik.yaml" ]; then
+            docker compose --project-name traefik -f "$GITOPS_DIR/traefik.yaml" down -v --remove-orphans 2>/dev/null || true
+        elif [ -f "$GITOPS_DIR/traefik.env" ]; then
             docker compose --project-name traefik --env-file "$GITOPS_DIR/traefik.env" -f overrides/compose.proxy.yaml -f overrides/compose.https.yaml down -v --remove-orphans 2>/dev/null || true
         else
             docker compose --project-name traefik -f overrides/compose.proxy.yaml down -v --remove-orphans 2>/dev/null || true
