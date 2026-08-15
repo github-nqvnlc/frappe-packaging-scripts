@@ -130,6 +130,9 @@ docker build \
   ```env
   CUSTOM_IMAGE=frappe-custom-image
   CUSTOM_TAG=latest
+  PULL_POLICY=missing
+  DB_HOST=mariadb-database
+  DB_PORT=3306
   ROUTER=${PROJECT_NAME}-router
   SITES_RULE=Host(`$SITE_DOMAIN`)
   ```
@@ -159,17 +162,21 @@ docker build \
   ```
 
 #### 12. Tạo Site và Cài đặt các Custom Apps
-Dựng động các cờ `--install-app` cho từng custom app trong `$CUSTOM_APP_NAMES` và thực thi `bench new-site`:
+Dựng động các cờ `--install-app` cho từng custom app trong `$CUSTOM_APP_NAMES` và thực thi `bench new-site` ở chế độ hoàn toàn tự động (non-interactive):
 ```bash
 INSTALL_APP_FLAGS=""
 for app in $CUSTOM_APP_NAMES; do
   INSTALL_APP_FLAGS="$INSTALL_APP_FLAGS --install-app $app"
 done
 
-docker compose --project-name "$PROJECT_NAME" exec backend \
+docker compose --project-name "$PROJECT_NAME" exec -T backend \
   bench new-site "$SITE_DOMAIN" \
-  --mariadb-user-host-login-scope=% \
+  --db-host mariadb-database \
+  --db-port 3306 \
+  --db-root-username root \
   --db-root-password "$DB_ROOT_PASSWORD" \
   --admin-password "$FRAPPE_ADMIN_PASSWORD" \
+  --mariadb-user-host-login-scope=% \
+  --no-mariadb-socket \
   $INSTALL_APP_FLAGS
 ```
