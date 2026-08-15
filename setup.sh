@@ -34,6 +34,8 @@ STEP_NAMES=(
 # 1. HÀM NẠP / KIỂM TRA MÔI TRƯỜNG BAN ĐẦU
 # ------------------------------------------------------------------------------
 init_env_vars() {
+    cd "$INITIAL_SCRIPT_DIR" 2>/dev/null || true
+
     if [ "$EUID" -ne 0 ]; then
         echo "[!] Script này yêu cầu quyền root/sudo."
         echo "[*] Đang tự động chuyển đổi sang quyền sudo..."
@@ -623,6 +625,9 @@ teardown_all_containers() {
             rm -rf "$GITOPS_DIR" 2>/dev/null || true
         fi
 
+        # Reset làm việc về thư mục chứa script
+        cd "$INITIAL_SCRIPT_DIR" 2>/dev/null || true
+
         echo "[✓] Đã dọn dẹp và xóa sạch toàn bộ hệ thống Docker cùng thư mục làm việc!"
     else
         echo "[*] Đã hủy thao tác xóa. Không có dữ liệu nào bị thay đổi."
@@ -730,6 +735,7 @@ edit_site_config() {
 show_menu() {
     init_env_vars
     while true; do
+        cd "$INITIAL_SCRIPT_DIR" 2>/dev/null || true
         echo ""
         echo "================================================================================"
         echo "           MENU ĐIỀU KHIỂN & KIỂM TRA QUY TRÌNH FRAPPE PACKAGING                "
