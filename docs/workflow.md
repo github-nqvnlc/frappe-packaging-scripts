@@ -128,8 +128,8 @@ docker build \
 #### 10. Cấu hình Project Stack (Bench)
 - Tạo file `~/gitops/${PROJECT_NAME}.env`:
   ```env
-  BACKEND_IMAGE=$CUSTOM_IMAGE_TAG
-  FRONTEND_IMAGE=$CUSTOM_IMAGE_TAG
+  CUSTOM_IMAGE=frappe-custom-image
+  CUSTOM_TAG=latest
   ROUTER=${PROJECT_NAME}-router
   SITES_RULE=Host(`$SITE_DOMAIN`)
   ```

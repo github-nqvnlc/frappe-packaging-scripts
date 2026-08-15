@@ -113,7 +113,7 @@ is_step_completed() {
             fi
             ;;
         10)
-            docker compose -p mariadb ps --services 2>/dev/null | grep -q mariadb
+            docker compose -p mariadb ps --services 2>/dev/null | grep -E -q "database|mariadb" || docker ps --format '{{.Names}}' 2>/dev/null | grep -q mariadb
             ;;
         11)
             [ -f "$GITOPS_DIR/${PROJECT_NAME}.yaml" ] && docker compose -p "$PROJECT_NAME" ps --services 2>/dev/null | grep -q backend
@@ -423,9 +423,20 @@ run_step_11() {
     echo "[BƯỚC 11/12] Tạo cấu hình & Deploy Project Stack ($PROJECT_NAME)..."
     cd "$SMRS_DIR/frappe_docker"
 
+    local custom_image_name=""
+    local custom_image_tag_only=""
+
+    if [[ "$CUSTOM_IMAGE_TAG" == *:* ]]; then
+        custom_image_name="${CUSTOM_IMAGE_TAG%:*}"
+        custom_image_tag_only="${CUSTOM_IMAGE_TAG##*:}"
+    else
+        custom_image_name="$CUSTOM_IMAGE_TAG"
+        custom_image_tag_only="latest"
+    fi
+
     cat <<EOF > "$GITOPS_DIR/${PROJECT_NAME}.env"
-BACKEND_IMAGE=$CUSTOM_IMAGE_TAG
-FRONTEND_IMAGE=$CUSTOM_IMAGE_TAG
+CUSTOM_IMAGE=$custom_image_name
+CUSTOM_TAG=$custom_image_tag_only
 ROUTER=${PROJECT_NAME}-router
 SITES_RULE=Host(\`$SITE_DOMAIN\`)
 EOF
