@@ -10,6 +10,9 @@ APT_CMD="apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--forc
 # Frappe Packaging & Deployment Automation Script (Interactive Step Menu)
 # ==============================================================================
 
+# Lưu đường dẫn gốc của thư mục chứa script ngay khi bắt đầu (trước mọi lệnh cd)
+INITIAL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Khai báo các tên bước
 STEP_NAMES=(
     "" # Step 0 index unused
@@ -41,24 +44,24 @@ init_env_vars() {
     REAL_HOME=$(eval echo "~$REAL_USER")
     SMRS_DIR="$REAL_HOME/frappe-packaging"
     GITOPS_DIR="$REAL_HOME/gitops"
-    SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-    # Tìm file .env nếu có
-    ENV_FILE=""
-    POSSIBLE_ENV_PATHS=(
-        "$SCRIPT_DIR/.env"
-        "$(pwd)/.env"
-        "$SMRS_DIR/.env"
-        "$REAL_HOME/.env"
-    )
-    for path in "${POSSIBLE_ENV_PATHS[@]}"; do
-        if [ -f "$path" ]; then
-            ENV_FILE="$path"
-            break
-        fi
-    done
+    # Tìm file .env nếu chưa được lưu hoặc đường dẫn không khả dụng
+    if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+        POSSIBLE_ENV_PATHS=(
+            "$INITIAL_SCRIPT_DIR/.env"
+            "$(pwd)/.env"
+            "$SMRS_DIR/.env"
+            "$REAL_HOME/.env"
+        )
+        for path in "${POSSIBLE_ENV_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+                ENV_FILE="$path"
+                break
+            fi
+        done
+    fi
 
-    if [ -n "$ENV_FILE" ]; then
+    if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
         set -o allexport
         source "$ENV_FILE" 2>/dev/null || true
         set +o allexport
@@ -497,7 +500,80 @@ show_status_check() {
 }
 
 # ------------------------------------------------------------------------------
-# 8. MENU TƯƠNG TÁC CHÍNH (INTERACTIVE MENU)
+# 8. HÀM DỪNG & XÓA TOÀN BỘ HỆ THỐNG DOCKER (TEARDOWN & CLEANUP)
+# ------------------------------------------------------------------------------
+teardown_all_containers() {
+    init_env_vars
+    echo ""
+    echo "================================================================================"
+    echo "⚠️  CẢNH BÁO NGUY HIỂM: XOÁ & DỪNG TOÀN BỘ HỆ THỐNG (TEARDOWN / CLEANUP)"
+    echo "================================================================================"
+    echo " Hành động này sẽ thực hiện:"
+    echo "  1. Dừng & XÓA tất cả Container Docker ($PROJECT_NAME, mariadb, traefik, cloudflared)"
+    echo "  2. XÓA các Docker Volume chứa dữ liệu (Bao gồm Database MariaDB và Frappe Sites)"
+    echo "  3. XÓA các Docker Network khởi tạo bởi các stack dự án"
+    echo "  4. Dọn dẹp các file cấu hình triển khai trong thư mục $GITOPS_DIR"
+    echo "  5. XÓA HOÀN TOÀN thư mục làm việc $SMRS_DIR (chứa repo frappe_docker đã clone) và thư mục $GITOPS_DIR"
+    echo "--------------------------------------------------------------------------------"
+    echo " ℹ️  GIỮ LẠI (Không bị xóa):"
+    echo "  - File cấu hình gốc .env của bạn"
+    echo "--------------------------------------------------------------------------------"
+    echo " ❗ LƯU Ý: DỮ LIỆU SITE, DATABASE VÀ TOÀN BỘ THƯ MỤC CẤU HÌNH SẼ BỊ XÓA VĨNH VIỄN!"
+    echo "================================================================================"
+    read -p "Bạn có CHẮC CHẮN muốn tiếp tục xóa không? (Gõ 'YES' hoặc 'y' để đồng ý): " confirm
+
+    if [ "$confirm" = "YES" ] || [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+        echo ""
+        echo "[*] Đang tiến hành dọn dẹp và dừng hệ thống Docker..."
+
+        # Dừng & Xóa Project Stack ($PROJECT_NAME)
+        if [ -n "$PROJECT_NAME" ] && [ -f "$GITOPS_DIR/${PROJECT_NAME}.yaml" ]; then
+            echo "  -> Đang dừng & xóa Project Stack ($PROJECT_NAME)..."
+            docker compose -p "$PROJECT_NAME" -f "$GITOPS_DIR/${PROJECT_NAME}.yaml" down -v --remove-orphans 2>/dev/null || true
+        fi
+
+        # Dừng & Xóa Cloudflare Tunnel (nếu có)
+        if [ -f "$GITOPS_DIR/cloudflared.yaml" ]; then
+            echo "  -> Đang dừng & xóa Cloudflare Tunnel container..."
+            docker compose -p tunnel -f "$GITOPS_DIR/cloudflared.yaml" down -v --remove-orphans 2>/dev/null || true
+        fi
+
+        # Dừng & Xóa MariaDB Shared
+        echo "  -> Đang dừng & xóa MariaDB Shared Database..."
+        if [ -d "$SMRS_DIR/frappe_docker" ]; then
+            cd "$SMRS_DIR/frappe_docker" 2>/dev/null || true
+        fi
+        if [ -f "$GITOPS_DIR/mariadb.env" ]; then
+            docker compose --project-name mariadb --env-file "$GITOPS_DIR/mariadb.env" -f overrides/compose.mariadb-shared.yaml down -v --remove-orphans 2>/dev/null || true
+        fi
+
+        # Dừng & Xóa Traefik Proxy
+        echo "  -> Đang dừng & xóa Traefik Proxy..."
+        if [ -f "$GITOPS_DIR/traefik.env" ]; then
+            docker compose --project-name traefik --env-file "$GITOPS_DIR/traefik.env" -f overrides/compose.proxy.yaml -f overrides/compose.https.yaml down -v --remove-orphans 2>/dev/null || true
+        else
+            docker compose --project-name traefik -f overrides/compose.proxy.yaml down -v --remove-orphans 2>/dev/null || true
+        fi
+
+        # Xóa toàn bộ thư mục làm việc $SMRS_DIR và $GITOPS_DIR
+        echo "  -> Đang xóa thư mục làm việc $SMRS_DIR (chứa repo frappe_docker)..."
+        if [ -n "$SMRS_DIR" ] && [ "$SMRS_DIR" != "/" ] && [ "$SMRS_DIR" != "$REAL_HOME" ]; then
+            rm -rf "$SMRS_DIR" 2>/dev/null || true
+        fi
+
+        echo "  -> Đang xóa thư mục cấu hình $GITOPS_DIR..."
+        if [ -n "$GITOPS_DIR" ] && [ "$GITOPS_DIR" != "/" ] && [ "$GITOPS_DIR" != "$REAL_HOME" ]; then
+            rm -rf "$GITOPS_DIR" 2>/dev/null || true
+        fi
+
+        echo "[✓] Đã dọn dẹp và xóa sạch toàn bộ hệ thống Docker cùng thư mục làm việc!"
+    else
+        echo "[*] Đã hủy thao tác xóa. Không có dữ liệu nào bị thay đổi."
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# 9. MENU TƯƠNG TÁC CHÍNH (INTERACTIVE MENU)
 # ------------------------------------------------------------------------------
 show_menu() {
     init_env_vars
@@ -520,9 +596,10 @@ show_menu() {
         done
         echo "--------------------------------------------------------------------------------"
         echo "  [ K  ] 🔍 Kiểm tra chi tiết trạng thái tất cả các bước (Health Check)"
+        echo "  [ D  ] 🗑️  Xóa & Dừng TOÀN BỘ hệ thống Docker (Teardown & Clean up)"
         echo "  [ Q  ] ❌ Thoát menu"
         echo "================================================================================"
-        read -p "Nhập lựa chọn của bạn [0-12 / K / Q]: " choice
+        read -p "Nhập lựa chọn của bạn [0-12 / K / D / Q]: " choice
 
         case "$choice" in
             0)
@@ -534,12 +611,15 @@ show_menu() {
             k|K)
                 show_status_check
                 ;;
+            d|D)
+                teardown_all_containers
+                ;;
             q|Q)
                 echo "Thoát chương trình. Tạm biệt!"
                 exit 0
                 ;;
             *)
-                echo "[!] Lựa chọn không hợp lệ. Vui lòng nhập từ 0 đến 12, K hoặc Q."
+                echo "[!] Lựa chọn không hợp lệ. Vui lòng nhập từ 0 đến 12, K, D hoặc Q."
                 ;;
         esac
         
@@ -562,7 +642,10 @@ elif [[ "$1" =~ ^[1-9]$|^1[0-2]$ ]]; then
     execute_single_step "$1"
 elif [ "$1" = "--check" ] || [ "$1" = "check" ] || [ "$1" = "k" ]; then
     show_status_check
+elif [ "$1" = "--down" ] || [ "$1" = "down" ] || [ "$1" = "d" ]; then
+    teardown_all_containers
 else
     # Không truyền tham số -> Mở Menu tương tác
     show_menu
 fi
+
