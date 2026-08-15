@@ -44,13 +44,15 @@ Dự án hỗ trợ 2 luồng triển khai tên miền độc lập, dễ dàng 
 
 ```text
 frappe-packaging-scripts/
-├── setup.sh                 # Script Bash tự động thực thi 12 bước cài đặt & deploy
+├── setup.sh                 # Script Bash tự động thực thi 12 bước cài đặt, health check & teardown
 ├── example.env              # File cấu hình mẫu chứa các biến môi trường cho cả 2 luồng
 ├── .gitignore               # Cấu hình loại bỏ các file nhạy cảm (.env, .env.local)
 ├── README.md                # Tài liệu hướng dẫn sử dụng chi tiết
 └── docs/
-    ├── workflow.md          # Tài liệu mô tả 12 bước workflow chi tiết
+    ├── workflow.md          # Tài liệu mô tả quy trình 12 bước chi tiết
+    ├── script_menu_guide.md # Hướng dẫn chi tiết menu điều khiển, cờ CLI & thao tác Teardown (Option D)
     └── research/
+        ├── site_config_management.md     # Tài liệu hướng dẫn & phân tích các cách sửa site_config.json
         ├── cloudflare_tunnel_deployment.md # Tài liệu nghiên cứu & cấu hình Cloudflare Tunnel
         └── frappe_docker_deployment.md     # Tài liệu phân tích kiến trúc Frappe Docker
 ```
@@ -114,20 +116,28 @@ SITE_DOMAIN="yourdomain.com"
 5. Nhấn **Save tunnel** để hoàn tất.
 
 ### Bước 4: Cấp Quyền Thực Thi & Chạy Script Setup
+
 ```bash
 chmod +x setup.sh
 
-# Chạy menu tương tác (Menu hiển thị trực quan các bước và kiểm tra tiền đề)
+# 1. Chạy Menu Tương Tác (Khuyên dùng - Hiển thị trạng thái các bước & kiểm tra tiền đề)
 ./setup.sh
 
-# Hoặc chạy trực tiếp toàn bộ 12 bước không qua menu
+# 2. Chạy tự động toàn bộ 12 bước không qua menu
 ./setup.sh --all
 
-# Hoặc kiểm tra trạng thái tất cả các bước (Health Check)
-./setup.sh --check
+# 3. Kiểm tra chi tiết trạng thái tất cả các bước (Health Check)
+./setup.sh --check   # Hoặc ./setup.sh k
 
-# Hoặc chạy riêng một bước cụ thể (ví dụ Bước 8)
-./setup.sh --step 8
+# 4. Chạy riêng một bước cụ thể (Ví dụ Bước 8 để Re-build Image)
+./setup.sh --step 8  # Hoặc ./setup.sh 8
+
+# 5. Chỉnh sửa file site_config.json / common_site_config.json trong Docker bằng nano / vi
+./setup.sh --edit    # Hoặc ./setup.sh e
+
+# 6. Dừng & Xóa sạch toàn bộ hệ thống Docker cùng thư mục làm việc (Teardown)
+./setup.sh --down    # Hoặc ./setup.sh d (Có cảnh báo an toàn & yêu cầu xác nhận)
+
 ```
 
 ---
@@ -150,13 +160,13 @@ chmod +x setup.sh
 
 ---
 
-## 📊 Quy Trình Thực Thi 12 Bước Của `setup.sh`
+## 📊 Quy Trình Thực Thi 12 Bước Của `setup.sh` & Điều Kiện Tiền Đề
 
-Script `setup.sh` tự động phân nhánh và thực thi 12 bước cài đặt:
+Script `setup.sh` tích hợp bộ kiểm tra tiền đề tự động (`validate_prerequisites_for_step`). Nếu chạy lẻ một bước, hệ thống sẽ kiểm tra đảm bảo các bước phụ thuộc trước đó đã hoàn thành:
 
-1. **[Bước 1] Kiểm tra quyền Root/Sudo**: Xác thực môi trường và quyền người dùng.
-2. **[Bước 2] Đọc & Kiểm tra file `.env`**: Validation các biến bắt buộc và token nếu chạy Cloudflare Tunnel.
-3. **[Bước 3] Cập nhật APT**: Tự động nâng cấp hệ thống `apt-get update & upgrade` (Non-interactive).
+1. **[Bước 1] Kiểm tra quyền Root/Sudo & Môi trường**: Xác thực quyền sudo và khai báo đường dẫn `~/frappe-packaging` & `~/gitops`.
+2. **[Bước 2] Đọc & Kiểm tra file `.env`**: Validation các biến bắt buộc và token nếu chọn Cloudflare Tunnel.
+3. **[Bước 3] Cập nhật APT**: Tự động nâng cấp hệ thống `apt-get update & upgrade` (Non-interactive mode).
 4. **[Bước 4] Cài đặt Prerequisites**: Kiểm tra/Cài đặt Git, Docker Engine (v23.0+) và Docker Compose v2.
 5. **[Bước 5] Tạo thư mục làm việc**: Khởi tạo `~/frappe-packaging` và `~/gitops`.
 6. **[Bước 6] Clone `frappe_docker`**: Tải repository `frappe/frappe_docker`.
@@ -168,6 +178,18 @@ Script `setup.sh` tự động phân nhánh và thực thi 12 bước cài đặ
 10. **[Bước 10] Khởi chạy MariaDB Shared**: Khởi động database MariaDB dùng chung.
 11. **[Bước 11] Deploy Project Stack**: Sinh file Compose tổng hợp `${PROJECT_NAME}.yaml` tương ứng với từng luồng và khởi chạy container stack.
 12. **[Bước 12] Tạo Site & Install Custom Apps**: Thực thi `bench new-site` trực tiếp với domain và cài đặt toàn bộ custom app.
+
+---
+
+## 🗑️ Dọn Dẹp & Xóa Hệ Thống (Teardown - Option D)
+
+Khi chọn **Option `D`** từ menu hoặc chạy `./setup.sh --down`, script sẽ thực hiện quá trình gỡ bỏ an toàn:
+
+- ⚠️ **Hiển thị cảnh báo nguy hiểm** & Yêu cầu gõ xác nhận `YES`, `y` hoặc `Y`.
+- **Thao tác xóa**:
+  - Dừng & xóa sạch toàn bộ các Docker Containers, Volumes (chứa MariaDB DB & Frappe Sites) và Networks.
+  - Xóa toàn bộ thư mục làm việc `~/frappe-packaging` (chứa repo `frappe_docker` đã clone) và thư mục `~/gitops`.
+- 🟢 **Tài nguyên giữ lại**: Giữ nguyên file cấu hình gốc `.env` của bạn.
 
 ---
 
@@ -234,37 +256,55 @@ Script `setup.sh` tự động phân nhánh và thực thi 12 bước cài đặ
 
 ---
 
-## 📌 Hướng Dẫn Vận Hành & Các Lệnh Thường Dùng
+## 📌 Hướng Dẫn Vận Hành & Chỉnh Sửa Cấu Hình (`site_config.json`)
 
-### Xem Logs Của Stack Project
-```bash
-docker compose -p frappe-packaging logs -f
-```
+### Các Lệnh Quản Lý Docker Thường Dùng
+- **Xem logs stack project**:
+  ```bash
+  docker compose -p frappe-packaging logs -f
+  ```
+- **Xem logs container Cloudflare Tunnel (nếu dùng Luồng 2)**:
+  ```bash
+  docker compose -p tunnel logs -f
+  ```
+- **Kiểm tra trạng thái containers**:
+  ```bash
+  docker compose -p frappe-packaging ps
+  ```
+- **Khởi động lại hệ thống**:
+  ```bash
+  docker compose -p frappe-packaging restart
+  ```
 
-### Xem Log Của Container Cloudflare Tunnel (Nếu dùng Luồng 2)
-```bash
-docker compose -p tunnel logs -f
-```
+### Chỉnh Sửa Cấu Hình `site_config.json` Trong Docker
+> 📖 *Chi tiết đọc tài liệu đầy đủ tại*: [`docs/research/site_config_management.md`](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/research/site_config_management.md)
 
-### Kiểm Tra Trạng Thái Container
-```bash
-docker compose -p frappe-packaging ps
-```
+1. **Dùng Menu Tích Hợp Của `setup.sh` (Nhanh nhất & Đầy đủ nhất)**:
+   ```bash
+   ./setup.sh --edit   # Hoặc chọn Option [ E ] từ Menu setup.sh
+   ```
+   *Hệ thống cho phép chọn `site_config.json` hoặc `common_site_config.json`, chọn trình biên soạn `nano` hoặc `vi`, và tự động chạy `bench clear-cache` + restart container `backend`.*
 
-### Khởi Động Lại Hệ Thống
-```bash
-docker compose -p frappe-packaging restart
-```
+2. **Dùng lệnh `bench set-config` (Dành cho 1 key-value đơn lẻ)**:
+   ```bash
+   # Bật Developer Mode
+   docker compose -p frappe-packaging exec backend bench --site yourdomain.com set-config developer_mode 1
+   
+   # Bật/Tắt chế độ bảo trì
+   docker compose -p frappe-packaging exec backend bench --site yourdomain.com set-config maintenance_mode 1
+   ```
+3. **Sửa file trong Volume bằng Container Alpine thủ công**:
+   ```bash
+   docker run --rm -it -v frappe-packaging_sites:/sites alpine vi /sites/yourdomain.com/site_config.json
+   ```
 
-### Thực Thi Lệnh Bench Migration Trong Backend
-```bash
-docker compose -p frappe-packaging exec backend bench migrate
-```
 
 ---
 
-## 📚 Tài Liệu Tham Khảo Thêm
+## 📚 Bộ Tài Liệu Hướng Dẫn Chi Tiết (Documentation Index)
 
-- [Quy trình thực thi 12 bước chi tiết (`docs/workflow.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/workflow.md)
-- [Nghiên cứu & Triển khai Cloudflare Tunnel (`docs/research/cloudflare_tunnel_deployment.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/research/cloudflare_tunnel_deployment.md)
-- [Phân tích kiến trúc Frappe Docker (`docs/research/frappe_docker_deployment.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/research/frappe_docker_deployment.md)
+- 📄 **[Quy trình thực thi 12 bước chi tiết (`docs/workflow.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/workflow.md)**
+- 📄 **[Hướng dẫn Menu Script, cờ CLI & Teardown (`docs/script_menu_guide.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/script_menu_guide.md)**
+- 📄 **[Hướng dẫn & Phân tích chỉnh sửa `site_config.json` (`docs/research/site_config_management.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/research/site_config_management.md)**
+- 📄 **[Nghiên cứu & Triển khai Cloudflare Tunnel (`docs/research/cloudflare_tunnel_deployment.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/research/cloudflare_tunnel_deployment.md)**
+- 📄 **[Phân tích kiến trúc Frappe Docker (`docs/research/frappe_docker_deployment.md`)](file:///Users/vanloc/Documents/Windify/frappe-packaging-scripts/docs/research/frappe_docker_deployment.md)**

@@ -573,7 +573,102 @@ teardown_all_containers() {
 }
 
 # ------------------------------------------------------------------------------
-# 9. MENU TƯƠNG TÁC CHÍNH (INTERACTIVE MENU)
+# 9. HÀM CHỈNH SỬA SITE_CONFIG.JSON HOẶC COMMON_SITE_CONFIG.JSON (EDIT CONFIG)
+# ------------------------------------------------------------------------------
+edit_site_config() {
+    init_env_vars
+    echo ""
+    echo "================================================================================"
+    echo "       🛠️  CHỈNH SỬA CẤU HÌNH SITE_CONFIG.JSON / COMMON_SITE_CONFIG.JSON        "
+    echo "================================================================================"
+
+    # Tìm Docker Volume thích hợp
+    VOLUME_NAME="${PROJECT_NAME}_sites"
+    if ! docker volume inspect "$VOLUME_NAME" &>/dev/null; then
+        if docker volume inspect "sites" &>/dev/null; then
+            VOLUME_NAME="sites"
+        elif docker volume inspect "${PROJECT_NAME}-sites" &>/dev/null; then
+            VOLUME_NAME="${PROJECT_NAME}-sites"
+        fi
+    fi
+
+    if ! docker volume inspect "$VOLUME_NAME" &>/dev/null; then
+        echo "[!] LỖI: Không tìm thấy Docker Volume lưu trữ sites ('$VOLUME_NAME')."
+        echo "[*] Gợi ý: Vui lòng chạy Bước 11 (Deploy Project Stack) trước khi chỉnh sửa cấu hình."
+        return 1
+    fi
+
+    echo " Chọn file cấu hình cần chỉnh sửa:"
+    echo "  [ 1 ] site_config.json (Cấu hình riêng của site: ${SITE_DOMAIN:-N/A})"
+    echo "  [ 2 ] common_site_config.json (Cấu hình chung toàn Bench: DB Host, Redis...)"
+    echo "  [ 3 ] Nhập tên site khác"
+    read -p "Nhập lựa chọn của bạn [1/2/3]: " file_choice
+
+    local target_path=""
+    local target_site=""
+    case "$file_choice" in
+        1)
+            if [ -z "$SITE_DOMAIN" ]; then
+                echo "[!] Lỗi: Biến SITE_DOMAIN chưa được khai báo."
+                return 1
+            fi
+            target_site="$SITE_DOMAIN"
+            target_path="${SITE_DOMAIN}/site_config.json"
+            ;;
+        2)
+            target_site="$SITE_DOMAIN"
+            target_path="common_site_config.json"
+            ;;
+        3)
+            read -p "Nhập tên site (ví dụ: erp.domain.com): " custom_site
+            if [ -z "$custom_site" ]; then
+                echo "[!] Tên site không được để trống."
+                return 1
+            fi
+            target_site="$custom_site"
+            target_path="${custom_site}/site_config.json"
+            ;;
+        *)
+            echo "[!] Lựa chọn không hợp lệ."
+            return 1
+            ;;
+    esac
+
+    echo ""
+    echo " Chọn trình soạn thảo văn bản:"
+    echo "  [ 1 ] nano (Khuyên dùng - dễ thao tác & lưu file)"
+    echo "  [ 2 ] vi / vim"
+    read -p "Nhập lựa chọn của bạn [1/2]: " editor_choice
+
+    echo ""
+    echo "[*] Đang mở file /sites/$target_path trong Docker Volume '$VOLUME_NAME'..."
+    if [ "$editor_choice" = "2" ]; then
+        docker run --rm -it \
+          -v "$VOLUME_NAME:/sites" \
+          alpine vi "/sites/$target_path"
+    else
+        docker run --rm -it \
+          -v "$VOLUME_NAME:/sites" \
+          alpine sh -c "apk add --no-cache nano && nano /sites/$target_path"
+    fi
+
+    echo "[✓] Đã kết thúc phiên chỉnh sửa file cấu hình."
+
+    echo ""
+    read -p "Bạn có muốn xóa cache (clear-cache) và restart backend container để áp dụng thay đổi không? [Y/n]: " reload_choice
+    if [ "$reload_choice" != "n" ] && [ "$reload_choice" != "N" ]; then
+        echo "  -> Đang xóa cache..."
+        if [ -n "$target_site" ]; then
+            docker compose -p "$PROJECT_NAME" exec backend bench --site "$target_site" clear-cache 2>/dev/null || true
+        fi
+        echo "  -> Đang restart backend container..."
+        docker compose -p "$PROJECT_NAME" restart backend 2>/dev/null || true
+        echo "[✓] Đã xóa cache và khởi động lại backend thành công!"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# 10. MENU TƯƠNG TÁC CHÍNH (INTERACTIVE MENU)
 # ------------------------------------------------------------------------------
 show_menu() {
     init_env_vars
@@ -596,10 +691,11 @@ show_menu() {
         done
         echo "--------------------------------------------------------------------------------"
         echo "  [ K  ] 🔍 Kiểm tra chi tiết trạng thái tất cả các bước (Health Check)"
+        echo "  [ E  ] 📝 Chỉnh sửa site_config.json / common_site_config.json (nano / vi)"
         echo "  [ D  ] 🗑️  Xóa & Dừng TOÀN BỘ hệ thống Docker (Teardown & Clean up)"
         echo "  [ Q  ] ❌ Thoát menu"
         echo "================================================================================"
-        read -p "Nhập lựa chọn của bạn [0-12 / K / D / Q]: " choice
+        read -p "Nhập lựa chọn của bạn [0-12 / K / E / D / Q]: " choice
 
         case "$choice" in
             0)
@@ -611,6 +707,9 @@ show_menu() {
             k|K)
                 show_status_check
                 ;;
+            e|E)
+                edit_site_config
+                ;;
             d|D)
                 teardown_all_containers
                 ;;
@@ -619,7 +718,7 @@ show_menu() {
                 exit 0
                 ;;
             *)
-                echo "[!] Lựa chọn không hợp lệ. Vui lòng nhập từ 0 đến 12, K, D hoặc Q."
+                echo "[!] Lựa chọn không hợp lệ. Vui lòng nhập từ 0 đến 12, K, E, D hoặc Q."
                 ;;
         esac
         
@@ -642,6 +741,8 @@ elif [[ "$1" =~ ^[1-9]$|^1[0-2]$ ]]; then
     execute_single_step "$1"
 elif [ "$1" = "--check" ] || [ "$1" = "check" ] || [ "$1" = "k" ]; then
     show_status_check
+elif [ "$1" = "--edit" ] || [ "$1" = "edit" ] || [ "$1" = "e" ]; then
+    edit_site_config
 elif [ "$1" = "--down" ] || [ "$1" = "down" ] || [ "$1" = "d" ]; then
     teardown_all_containers
 else

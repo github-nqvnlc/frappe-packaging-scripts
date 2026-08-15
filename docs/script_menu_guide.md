@@ -182,6 +182,21 @@ Trước khi thực thi bất kỳ bước nào (từ Bước 2 đến Bước 1
 
 ---
 
+### 📝 Menu `[ E ]`: Chỉnh sửa `site_config.json` hoặc `common_site_config.json` (nano / vi)
+- **Hàm tương ứng**: `edit_site_config()`
+- **Mô tả hoạt động**:
+  1. **Tự động tìm kiếm Docker Volume**: Tự động phát hiện Volume lưu trữ các sites (ví dụ `${PROJECT_NAME}_sites` hoặc `sites`).
+  2. **Cho phép chọn file chỉnh sửa**:
+     - `1`: `site_config.json` của site mặc định (`$SITE_DOMAIN`).
+     - `2`: `common_site_config.json` (Cấu hình dùng chung toàn Bench: DB Host, Redis...).
+     - `3`: Tùy chỉnh tên site khác trong hệ thống.
+  3. **Tùy chọn trình soạn thảo**:
+     - `1`: `nano` (Tự động tải & chạy container Alpine tích hợp nano).
+     - `2`: `vi` / `vim`.
+  4. **Tự động reload hệ thống**: Sau khi lưu file, script sẽ hỏi và tự động chạy `bench clear-cache` và khởi động lại container `backend` để áp dụng thay đổi ngay lập tức.
+
+---
+
 ### 🗑️ Menu `[ D ]`: Xóa & Dừng TOÀN BỘ hệ thống Docker (Teardown & Clean up)
 - **Hàm tương ứng**: `teardown_all_containers()`
 - **Mô tả hoạt động**:
@@ -194,8 +209,6 @@ Trước khi thực thi bất kỳ bước nào (từ Bước 2 đến Bước 1
      - Xóa hoàn toàn thư mục `~/gitops` (chứa toàn bộ các file cấu hình `.yaml` và `.env` tạm).
   4. **Tài nguyên DUY NHẤT được GIỮ LẠI**:
      - **File `.env`**: File cấu hình gốc chứa biến môi trường triển khai của bạn hoàn toàn an toàn và được giữ nguyên.
-
-
 
 ---
 
@@ -213,6 +226,7 @@ Ngoài việc sử dụng Menu Tương Tác, bạn có thể gọi trực tiếp
 | `./setup.sh --all` hoặc `./setup.sh 0` | Option `[ 0 ]` | Chạy tự động toàn bộ 12 bước từ A-Z |
 | `./setup.sh --step <N>` hoặc `./setup.sh <N>` | Option `[ 1-12 ]` | Chạy riêng lẻ Bước N (Ví dụ: `./setup.sh 8` để Re-build Image) |
 | `./setup.sh --check` hoặc `./setup.sh k` | Option `[ K ]` | Hiển thị bảng Health Check trạng thái các bước |
+| `./setup.sh --edit` hoặc `./setup.sh e` | Option `[ E ]` | Mở công cụ chỉnh sửa `site_config.json` hoặc `common_site_config.json` bằng nano/vi |
 | `./setup.sh --down` hoặc `./setup.sh d` | Option `[ D ]` | Thực thi dừng & xóa sạch toàn bộ hệ thống Docker (yêu cầu xác nhận) |
 
 ---
@@ -233,5 +247,7 @@ Ngoài việc sử dụng Menu Tương Tác, bạn có thể gọi trực tiếp
 | **Bước 10** | Khởi chạy MariaDB Shared Database | Mục 9: Thiết lập MariaDB Shared |
 | **Bước 11** | Deploy Project Stack | Mục 10 & 11: Cấu hình & Deploy Project Stack |
 | **Bước 12** | Tạo Site & Cài đặt Custom Apps | Mục 12: Tạo Site và Cài đặt các Custom Apps |
+| **Option E** | Chỉnh sửa `site_config.json` / `common_site_config.json` | Quản trị và cấu hình runtime nâng cao cho Frappe Site |
 | **Option D** | Dừng & Xóa sạch toàn bộ hệ thống Docker | Thao tác Teardown / Dọn dẹp môi trường thử nghiệm |
+
 
