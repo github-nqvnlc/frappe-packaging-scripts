@@ -579,77 +579,93 @@ show_status_check() {
 # ------------------------------------------------------------------------------
 teardown_all_containers() {
     init_env_vars
-    echo ""
-    echo "================================================================================"
-    echo "⚠️  CẢNH BÁO NGUY HIỂM: XOÁ & DỪNG TOÀN BỘ HỆ THỐNG (TEARDOWN / CLEANUP)"
-    echo "================================================================================"
-    echo " Hành động này sẽ thực hiện:"
-    echo "  1. Dừng & XÓA tất cả Container Docker ($PROJECT_NAME, mariadb, traefik, cloudflared)"
-    echo "  2. XÓA các Docker Volume chứa dữ liệu (Bao gồm Database MariaDB và Frappe Sites)"
-    echo "  3. XÓA các Docker Network khởi tạo bởi các stack dự án"
-    echo "  4. Dọn dẹp các file cấu hình triển khai trong thư mục $GITOPS_DIR"
-    echo "  5. XÓA HOÀN TOÀN thư mục làm việc $SMRS_DIR (chứa repo frappe_docker đã clone) và thư mục $GITOPS_DIR"
-    echo "--------------------------------------------------------------------------------"
-    echo " ℹ️  GIỮ LẠI (Không bị xóa):"
-    echo "  - File cấu hình gốc .env của bạn"
-    echo "--------------------------------------------------------------------------------"
-    echo " ❗ LƯU Ý: DỮ LIỆU SITE, DATABASE VÀ TOÀN BỘ THƯ MỤC CẤU HÌNH SẼ BỊ XÓA VĨNH VIỄN!"
-    echo "================================================================================"
-    read -p "Bạn có CHẮC CHẮN muốn tiếp tục xóa không? (Gõ 'YES' hoặc 'y' để đồng ý): " confirm
-
-    if [ "$confirm" = "YES" ] || [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+    while true; do
         echo ""
-        echo "[*] Đang tiến hành dọn dẹp và dừng hệ thống Docker..."
+        echo "================================================================================"
+        echo "                    MENU XÓA (TEARDOWN & CLEANUP)                               "
+        echo "================================================================================"
+        echo "  [ 1 ] Down & xóa tất cả các container đang chạy"
+        echo "  [ 2 ] Down & xóa một container cụ thể"
+        echo "  [ 3 ] Xóa tất cả các image đã tạo"
+        echo "  [ 4 ] Làm sạch tất cả những gì đã tạo với docker (system prune)"
+        echo "  [ 5 ] Xóa toàn bộ source code đã tạo ($SMRS_DIR & $GITOPS_DIR)"
+        echo "  [ 6 ] Làm tất cả các ý trên, xóa sạch"
+        echo "--------------------------------------------------------------------------------"
+        echo "  [ 0 ] Quay lại menu chính"
+        echo "================================================================================"
+        read -p "Nhập lựa chọn của bạn [0-6]: " del_choice
 
-        # Dừng & Xóa Project Stack ($PROJECT_NAME)
-        if [ -n "$PROJECT_NAME" ] && [ -f "$GITOPS_DIR/${PROJECT_NAME}.yaml" ]; then
-            echo "  -> Đang dừng & xóa Project Stack ($PROJECT_NAME)..."
-            docker compose -p "$PROJECT_NAME" -f "$GITOPS_DIR/${PROJECT_NAME}.yaml" down -v --remove-orphans 2>/dev/null || true
-        fi
-
-        # Dừng & Xóa Cloudflare Tunnel (nếu có)
-        if [ -f "$GITOPS_DIR/cloudflared.yaml" ]; then
-            echo "  -> Đang dừng & xóa Cloudflare Tunnel container..."
-            docker compose -p tunnel -f "$GITOPS_DIR/cloudflared.yaml" down -v --remove-orphans 2>/dev/null || true
-        fi
-
-        # Dừng & Xóa MariaDB Shared
-        echo "  -> Đang dừng & xóa MariaDB Shared Database..."
-        if [ -d "$SMRS_DIR/frappe_docker" ]; then
-            cd "$SMRS_DIR/frappe_docker" 2>/dev/null || true
-        fi
-        if [ -f "$GITOPS_DIR/mariadb.env" ]; then
-            docker compose --project-name mariadb --env-file "$GITOPS_DIR/mariadb.env" -f overrides/compose.mariadb-shared.yaml down -v --remove-orphans 2>/dev/null || true
-        fi
-
-        # Dừng & Xóa Traefik Proxy
-        echo "  -> Đang dừng & xóa Traefik Proxy..."
-        if [ -f "$GITOPS_DIR/traefik.yaml" ]; then
-            docker compose --project-name traefik -f "$GITOPS_DIR/traefik.yaml" down -v --remove-orphans 2>/dev/null || true
-        elif [ -f "$GITOPS_DIR/traefik.env" ]; then
-            docker compose --project-name traefik --env-file "$GITOPS_DIR/traefik.env" -f overrides/compose.proxy.yaml -f overrides/compose.https.yaml down -v --remove-orphans 2>/dev/null || true
-        else
-            docker compose --project-name traefik -f overrides/compose.proxy.yaml down -v --remove-orphans 2>/dev/null || true
-        fi
-
-        # Xóa toàn bộ thư mục làm việc $SMRS_DIR và $GITOPS_DIR
-        echo "  -> Đang xóa thư mục làm việc $SMRS_DIR (chứa repo frappe_docker)..."
-        if [ -n "$SMRS_DIR" ] && [ "$SMRS_DIR" != "/" ] && [ "$SMRS_DIR" != "$REAL_HOME" ]; then
-            rm -rf "$SMRS_DIR" 2>/dev/null || true
-        fi
-
-        echo "  -> Đang xóa thư mục cấu hình $GITOPS_DIR..."
-        if [ -n "$GITOPS_DIR" ] && [ "$GITOPS_DIR" != "/" ] && [ "$GITOPS_DIR" != "$REAL_HOME" ]; then
-            rm -rf "$GITOPS_DIR" 2>/dev/null || true
-        fi
-
-        # Reset làm việc về thư mục chứa script
-        cd "$INITIAL_SCRIPT_DIR" 2>/dev/null || true
-
-        echo "[✓] Đã dọn dẹp và xóa sạch toàn bộ hệ thống Docker cùng thư mục làm việc!"
-    else
-        echo "[*] Đã hủy thao tác xóa. Không có dữ liệu nào bị thay đổi."
-    fi
+        case "$del_choice" in
+            1)
+                echo "[*] Đang dừng và xóa tất cả các container..."
+                docker stop $(docker ps -aq) 2>/dev/null || true
+                docker rm $(docker ps -aq) 2>/dev/null || true
+                echo "[✓] Hoàn tất."
+                ;;
+            2)
+                echo ""
+                docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"
+                echo ""
+                read -p "Nhập ID hoặc Tên Container cần xóa: " container_name
+                if [ -n "$container_name" ]; then
+                    docker stop "$container_name" 2>/dev/null || true
+                    docker rm "$container_name" 2>/dev/null || true
+                    echo "[✓] Đã xóa container $container_name."
+                fi
+                ;;
+            3)
+                echo "[*] Đang xóa tất cả các image..."
+                docker rmi $(docker images -q) -f 2>/dev/null || true
+                echo "[✓] Hoàn tất."
+                ;;
+            4)
+                echo "[*] Đang dọn dẹp toàn bộ hệ thống Docker (prune)..."
+                docker system prune -a --volumes -f
+                echo "[✓] Hoàn tất."
+                ;;
+            5)
+                echo "[*] Đang xóa thư mục mã nguồn..."
+                if [ -n "$SMRS_DIR" ] && [ "$SMRS_DIR" != "/" ] && [ "$SMRS_DIR" != "$REAL_HOME" ]; then
+                    rm -rf "$SMRS_DIR" 2>/dev/null || true
+                fi
+                if [ -n "$GITOPS_DIR" ] && [ "$GITOPS_DIR" != "/" ] && [ "$GITOPS_DIR" != "$REAL_HOME" ]; then
+                    rm -rf "$GITOPS_DIR" 2>/dev/null || true
+                fi
+                echo "[✓] Hoàn tất xóa mã nguồn."
+                ;;
+            6)
+                read -p "Bạn có CHẮC CHẮN muốn xóa sạch toàn bộ không? (y/N): " confirm
+                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+                    echo "[*] Thực hiện XÓA SẠCH tất cả..."
+                    echo "  -> Dừng và xóa container..."
+                    docker stop $(docker ps -aq) 2>/dev/null || true
+                    docker rm $(docker ps -aq) 2>/dev/null || true
+                    
+                    echo "  -> Dọn dẹp system và volume..."
+                    docker system prune -a --volumes -f
+                    
+                    echo "  -> Xóa thư mục mã nguồn..."
+                    if [ -n "$SMRS_DIR" ] && [ "$SMRS_DIR" != "/" ] && [ "$SMRS_DIR" != "$REAL_HOME" ]; then
+                        rm -rf "$SMRS_DIR" 2>/dev/null || true
+                    fi
+                    if [ -n "$GITOPS_DIR" ] && [ "$GITOPS_DIR" != "/" ] && [ "$GITOPS_DIR" != "$REAL_HOME" ]; then
+                        rm -rf "$GITOPS_DIR" 2>/dev/null || true
+                    fi
+                    echo "[✓] Hoàn tất xóa sạch."
+                else
+                    echo "[*] Đã hủy thao tác."
+                fi
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo "[!] Lựa chọn không hợp lệ."
+                ;;
+        esac
+        echo ""
+        read -p "Nhấn [Enter] để tiếp tục..." dummy
+    done
 }
 
 # ------------------------------------------------------------------------------
